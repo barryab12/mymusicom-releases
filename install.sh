@@ -1,11 +1,83 @@
 #!/bin/bash
-# Mymusicom Player - Installation rapide pour Raspberry Pi
-# Usage: curl -sL https://bit.ly/mymusicom-install | bash
+# Mymusicom Player - Installation / Desinstallation pour Raspberry Pi
+#
+# Installer :    curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash
+# Desinstaller : curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --uninstall
 set -e
 
 REPO="barryab12/mymusicom-releases"
 DEB_NAME="mymusicom-server.deb"
 
+# ──────────────────────────────────────────────
+#  DESINSTALLATION
+# ──────────────────────────────────────────────
+if [ "$1" = "--uninstall" ] || [ "$1" = "-u" ]; then
+  echo ""
+  echo "  ╔══════════════════════════════════════╗"
+  echo "  ║     MYMUSICOM PLAYER UNINSTALLER     ║"
+  echo "  ╚══════════════════════════════════════╝"
+  echo ""
+
+  echo "[1/5] Arret des services..."
+  sudo systemctl stop mymusicom-server@* mymusicom-kiosk@* 2>/dev/null || true
+  sudo systemctl disable mymusicom-server@* mymusicom-kiosk@* 2>/dev/null || true
+  echo "  Services arretes"
+
+  echo "[2/5] Arret des processus..."
+  pkill -f ffplay 2>/dev/null || true
+  pkill -f "node.*server.js" 2>/dev/null || true
+  pkill -f chromium-browser 2>/dev/null || true
+  echo "  Processus arretes"
+
+  echo "[3/5] Desinstallation des packages..."
+  sudo dpkg --purge --force-all mymusicom-server 2>/dev/null || true
+  sudo dpkg --purge --force-all mymusicom-desktop 2>/dev/null || true
+  echo "  Packages supprimes"
+
+  echo "[4/5] Suppression des fichiers..."
+  # Installation
+  sudo rm -rf /opt/mymusicom-server
+  sudo rm -rf "/opt/Mymusicom App"
+  # Services systemd
+  sudo rm -f /etc/systemd/system/mymusicom-*.service
+  # Desktop et icones
+  sudo rm -f /usr/share/applications/mymusicom*.desktop
+  sudo rm -f /usr/share/pixmaps/mymusicom*.png
+  rm -f ~/Desktop/mymusicom*.desktop 2>/dev/null || true
+  rm -f ~/Bureau/mymusicom*.desktop 2>/dev/null || true
+  # Autostart
+  rm -f ~/.config/autostart/mymusicom-*.desktop 2>/dev/null || true
+  # Donnees utilisateur (config, playlists, cache, logs)
+  rm -rf ~/.mymusicom
+  # Cache Chromium (Service Workers + cache)
+  rm -rf ~/.config/chromium/Default/Service\ Worker
+  rm -rf ~/.cache/chromium
+  echo "  Fichiers supprimes"
+
+  echo "[5/5] Rechargement systemd..."
+  sudo systemctl daemon-reload
+  sudo update-desktop-database /usr/share/applications 2>/dev/null || true
+  echo "  Systemd recharge"
+
+  echo ""
+  echo "  ╔══════════════════════════════════════╗"
+  echo "  ║    DESINSTALLATION TERMINEE !        ║"
+  echo "  ╚══════════════════════════════════════╝"
+  echo ""
+  echo "  Tout a ete supprime :"
+  echo "    - Packages mymusicom-server et mymusicom-desktop"
+  echo "    - Dossiers /opt/mymusicom-server et /opt/Mymusicom App"
+  echo "    - Services systemd"
+  echo "    - Icone du bureau et du menu"
+  echo "    - Donnees utilisateur (~/.mymusicom/)"
+  echo "    - Cache Chromium"
+  echo ""
+  exit 0
+fi
+
+# ──────────────────────────────────────────────
+#  INSTALLATION
+# ──────────────────────────────────────────────
 echo ""
 echo "  ╔══════════════════════════════════════╗"
 echo "  ║       MYMUSICOM PLAYER INSTALLER     ║"
@@ -29,7 +101,6 @@ command -v chromium-browser >/dev/null 2>&1 || MISSING="$MISSING chromium-browse
 
 if [ -n "$MISSING" ]; then
   echo "  Installation des packages manquants:$MISSING"
-  # Install Node.js 18 if missing
   if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -d. -f1 | tr -d v)" -lt 18 ] 2>/dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - >/dev/null 2>&1
   fi
@@ -88,4 +159,7 @@ IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}')
 if [ -n "$IP_ADDR" ]; then
   echo "  Web:     http://${IP_ADDR}:3009"
 fi
+echo ""
+echo "  Pour desinstaller :"
+echo "  curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --uninstall"
 echo ""
