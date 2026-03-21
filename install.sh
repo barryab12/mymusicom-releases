@@ -159,6 +159,17 @@ if ! command -v chromium-browser >/dev/null 2>&1; then
   sudo apt-get install -y chromium-browser 2>&1 | tail -1
 fi
 
+if ! command -v aplay >/dev/null 2>&1; then
+  echo "  Installation de alsa-utils..."
+  sudo apt-get install -y alsa-utils 2>&1 | tail -1
+fi
+
+# Ajouter l'utilisateur au groupe audio
+if ! groups "$SERVICE_USER" 2>/dev/null | grep -qw audio; then
+  echo "  Ajout de $SERVICE_USER au groupe audio..."
+  sudo usermod -aG audio "$SERVICE_USER"
+fi
+
 echo "  Prerequis OK"
 
 # Get latest release
