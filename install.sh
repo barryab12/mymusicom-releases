@@ -164,6 +164,11 @@ if ! command -v aplay >/dev/null 2>&1; then
   sudo apt-get install -y alsa-utils 2>&1 | tail -1
 fi
 
+if ! command -v pulseaudio >/dev/null 2>&1; then
+  echo "  Installation de pulseaudio..."
+  sudo apt-get install -y pulseaudio 2>&1 | tail -1
+fi
+
 # Ajouter l'utilisateur au groupe audio
 if ! groups "$SERVICE_USER" 2>/dev/null | grep -qw audio; then
   echo "  Ajout de $SERVICE_USER au groupe audio..."
