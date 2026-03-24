@@ -34,6 +34,7 @@ if [ "$MODE" = "uninstall" ]; then
   pkill -f ffplay 2>/dev/null || true
   pkill -f "node.*server.js" 2>/dev/null || true
   pkill -f chromium-browser 2>/dev/null || true
+  pkill -f chromium 2>/dev/null || true
   echo "  Processus arretes"
 
   echo "[3/5] Desinstallation des packages..."
@@ -154,9 +155,13 @@ if ! command -v ffplay >/dev/null 2>&1; then
   sudo apt-get install -y ffmpeg 2>&1 | tail -1
 fi
 
-if ! command -v chromium-browser >/dev/null 2>&1; then
-  echo "  Installation de chromium-browser..."
-  sudo apt-get install -y chromium-browser 2>&1 | tail -1
+if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+  echo "  Installation de chromium..."
+  if apt-cache show chromium-browser >/dev/null 2>&1; then
+    sudo apt-get install -y chromium-browser 2>&1 | tail -1
+  else
+    sudo apt-get install -y chromium 2>&1 | tail -1
+  fi
 fi
 
 if ! command -v aplay >/dev/null 2>&1; then
@@ -223,6 +228,7 @@ sudo systemctl stop "mymusicom-server@${SERVICE_USER}" "mymusicom-kiosk@${SERVIC
 sudo systemctl stop mymusicom-server@pi mymusicom-kiosk@pi 2>/dev/null || true
 pkill -f ffplay 2>/dev/null || true
 pkill -f chromium-browser 2>/dev/null || true
+pkill -f chromium 2>/dev/null || true
 sudo rm -f /var/lib/dpkg/info/mymusicom-server.postrm 2>/dev/null || true
 sudo rm -f /var/lib/dpkg/info/mymusicom-desktop.postrm 2>/dev/null || true
 sudo dpkg --purge --force-all mymusicom-desktop 2>/dev/null || true
