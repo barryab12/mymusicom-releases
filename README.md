@@ -28,6 +28,7 @@ curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/ins
 
 | Version | Date | Notes |
 |---------|------|-------|
+| 1.0.22 | 2026-03-27 | Fix barre de progression UI |
 | 1.0.21 | 2026-03-27 | Fix lecture manuelle, bouton Programme auto, icones SVG |
 | 1.0.20 | 2026-03-27 | Fix mutex resume-program |
 | 1.0.19 | 2026-03-27 | Fix mutex deadlock lecture manuelle |
