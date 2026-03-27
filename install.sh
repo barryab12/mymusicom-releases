@@ -1,19 +1,30 @@
 #!/bin/bash
 # Mymusicom Player - Installation / Mise a jour / Desinstallation pour Raspberry Pi
 #
-# Installer :      curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash
-# Mettre a jour :  curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --update
-# Desinstaller :   curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --uninstall
+# Installer :                curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash
+# Mettre a jour :            curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --update
+# Installer version precise: curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --version=1.0.21
+# Desinstaller :             curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --uninstall
 
 REPO="barryab12/mymusicom-releases"
 DEB_NAME="mymusicom-server.deb"
 MODE="install"
+TARGET_VERSION=""
 
-if [ "$1" = "--uninstall" ] || [ "$1" = "-u" ]; then
-  MODE="uninstall"
-elif [ "$1" = "--update" ] || [ "$1" = "-up" ]; then
-  MODE="update"
-fi
+for arg in "$@"; do
+  case "$arg" in
+    --uninstall|-u)
+      MODE="uninstall"
+      ;;
+    --update|-up)
+      MODE="update"
+      ;;
+    --version=*)
+      TARGET_VERSION="${arg#--version=}"
+      MODE="update"
+      ;;
+  esac
+done
 
 # ──────────────────────────────────────────────
 #  DESINSTALLATION
@@ -182,24 +193,39 @@ fi
 
 echo "  Prerequis OK"
 
-# Get latest release
+# Get release (latest or specific version)
 echo ""
-echo "[1/4] Recherche de la derniere version..."
-API_RESPONSE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
-DOWNLOAD_URL=$(echo "$API_RESPONSE" | grep "browser_download_url.*\.deb" | head -1 | cut -d '"' -f 4)
+if [ -n "$TARGET_VERSION" ]; then
+  echo "[1/4] Recherche de la version v${TARGET_VERSION}..."
+  # Remove leading 'v' if present
+  TARGET_VERSION=$(echo "$TARGET_VERSION" | sed 's/^v//')
+  API_RESPONSE=$(curl -s "https://api.github.com/repos/$REPO/releases/tags/v${TARGET_VERSION}")
+  DOWNLOAD_URL=$(echo "$API_RESPONSE" | grep "browser_download_url.*\.deb" | head -1 | cut -d '"' -f 4)
 
-if [ -z "$DOWNLOAD_URL" ]; then
-  echo "  ERREUR: Impossible de trouver le .deb sur GitHub."
-  echo "  Reponse API: $(echo "$API_RESPONSE" | head -5)"
-  echo "  Verifiez: https://github.com/$REPO/releases"
-  exit 1
+  if [ -z "$DOWNLOAD_URL" ]; then
+    echo "  ERREUR: Version v${TARGET_VERSION} introuvable."
+    echo "  Versions disponibles :"
+    curl -s "https://api.github.com/repos/$REPO/releases" | grep '"tag_name"' | head -10 | sed 's/.*"tag_name": *"//;s/".*//' | while read -r tag; do echo "    - $tag"; done
+    exit 1
+  fi
+else
+  echo "[1/4] Recherche de la derniere version..."
+  API_RESPONSE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest")
+  DOWNLOAD_URL=$(echo "$API_RESPONSE" | grep "browser_download_url.*\.deb" | head -1 | cut -d '"' -f 4)
+
+  if [ -z "$DOWNLOAD_URL" ]; then
+    echo "  ERREUR: Impossible de trouver le .deb sur GitHub."
+    echo "  Reponse API: $(echo "$API_RESPONSE" | head -5)"
+    echo "  Verifiez: https://github.com/$REPO/releases"
+    exit 1
+  fi
 fi
 
 NEW_VER=$(echo "$DOWNLOAD_URL" | grep -oP '_\K[0-9]+\.[0-9]+\.[0-9]+' || echo "latest")
 echo "  Version disponible: $NEW_VER"
 
-# Skip if already up to date (update mode only)
-if [ "$MODE" = "update" ] && [ "$CURRENT_VER" = "$NEW_VER" ]; then
+# Skip if already up to date (update mode only, not when specific version requested)
+if [ "$MODE" = "update" ] && [ -z "$TARGET_VERSION" ] && [ "$CURRENT_VER" = "$NEW_VER" ]; then
   echo ""
   echo "  Deja a jour (v${CURRENT_VER}). Rien a faire."
   echo ""
@@ -316,6 +342,7 @@ fi
 
 echo ""
 echo "  Commandes disponibles :"
-echo "  Mettre a jour :  curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --update"
-echo "  Desinstaller :   curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --uninstall"
+echo "  Mettre a jour :         curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --update"
+echo "  Version specifique :    curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --version=X.Y.Z"
+echo "  Desinstaller :          curl -sL https://raw.githubusercontent.com/barryab12/mymusicom-releases/main/install.sh | bash -s -- --uninstall"
 echo ""
