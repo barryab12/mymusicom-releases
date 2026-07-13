@@ -113,13 +113,29 @@ if [ "$SERVICE_USER" = "root" ]; then
 fi
 echo "  Utilisateur: $SERVICE_USER"
 
-# Check architecture
+# Check architecture (arm64 = Pi 64-bit, armhf/armv7l = Pi 32-bit / anciens Pi)
 ARCH=$(dpkg --print-architecture 2>/dev/null)
-echo "  Architecture: $ARCH"
-if [ "$ARCH" != "arm64" ] && [ "$ARCH" != "armhf" ]; then
-  echo ""
-  echo "  ERREUR: Ce package est pour Raspberry Pi (arm64/armhf)."
-  exit 1
+MACHINE=$(uname -m 2>/dev/null)
+echo "  Architecture: $ARCH ($MACHINE)"
+case "$ARCH" in
+  arm64|aarch64|armhf|armel|all) ;;
+  *)
+    # Certains systemes armv7l rapportent une arch inattendue via dpkg
+    case "$MACHINE" in
+      armv7l|armv6l|aarch64) ;;
+      *)
+        echo ""
+        echo "  ERREUR: Ce package est pour Raspberry Pi (arm64/armhf/armv7l)."
+        exit 1
+        ;;
+    esac
+    ;;
+esac
+
+# Vieux Pi 32-bit sans acces a Node 18+ (NodeSource a abandonne armv7l)
+IS_ARMV7=0
+if [ "$MACHINE" = "armv7l" ] || [ "$MACHINE" = "armv6l" ] || [ "$ARCH" = "armhf" ] || [ "$ARCH" = "armel" ]; then
+  IS_ARMV7=1
 fi
 
 # Show current version if updating
@@ -137,10 +153,44 @@ fi
 echo ""
 echo "[0/4] Verification des prerequis..."
 
+# Node >= 16 suffit (le serveur est pure-JS, aucune API Node-18)
+NODE_MIN=16
+NODE_FALLBACK_VER="16.20.2"
+
+install_node_manual() {
+  # Fallback pour armv7l/armv6l : NodeSource n'a plus de builds -> nodejs.org
+  local m="$1" tarch="" base="https://nodejs.org/dist"
+  case "$m" in
+    armv7l) tarch="armv7l" ;;
+    # armv6l (Pi Zero / Pi 1) : pas de build officiel -> unofficial-builds
+    armv6l) tarch="armv6l"; base="https://unofficial-builds.nodejs.org/download/release" ;;
+    aarch64) tarch="arm64" ;;
+    *)      tarch="armv7l" ;;
+  esac
+  local url="${base}/v${NODE_FALLBACK_VER}/node-v${NODE_FALLBACK_VER}-linux-${tarch}.tar.xz"
+  echo "  Installation manuelle de Node.js ${NODE_FALLBACK_VER} (${tarch}) depuis nodejs.org..."
+  local tmpd
+  tmpd=$(mktemp -d)
+  if ! curl -fL -o "$tmpd/node.tar.xz" "$url" --progress-bar; then
+    echo "  ERREUR: telechargement Node ${NODE_FALLBACK_VER} echoue ($url)"
+    rm -rf "$tmpd"
+    return 1
+  fi
+  if ! tar -xJf "$tmpd/node.tar.xz" -C "$tmpd"; then
+    echo "  ERREUR: extraction Node echouee"
+    rm -rf "$tmpd"
+    return 1
+  fi
+  sudo cp -r "$tmpd/node-v${NODE_FALLBACK_VER}-linux-${tarch}"/{bin,include,lib,share} /usr/local/
+  rm -rf "$tmpd"
+  hash -r 2>/dev/null || true
+  command -v node >/dev/null 2>&1
+}
+
 NODE_OK=0
 if command -v node >/dev/null 2>&1; then
   NODE_VER=$(node -v | cut -d. -f1 | tr -d v)
-  if [ "$NODE_VER" -ge 18 ] 2>/dev/null; then
+  if [ "$NODE_VER" -ge "$NODE_MIN" ] 2>/dev/null; then
     NODE_OK=1
     echo "  nodejs $(node -v) OK"
   else
@@ -151,14 +201,28 @@ else
 fi
 
 if [ "$NODE_OK" = "0" ]; then
-  echo "  Installation de Node.js 18..."
-  curl -fsSL https://deb.nodesource.com/setup_18.x 2>/dev/null | sudo -E bash - >/dev/null 2>&1
-  if ! sudo apt-get install -y nodejs 2>&1 | tail -3; then
-    echo "  ERREUR: Impossible d'installer Node.js 18"
-    echo "  Essayez: curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs"
-    exit 1
+  if [ "$IS_ARMV7" = "1" ]; then
+    # Vieux Pi 32-bit : directement le fallback manuel (NodeSource inutile ici)
+    if ! install_node_manual "$MACHINE"; then
+      echo "  ERREUR: Impossible d'installer Node.js sur cette machine (${MACHINE})."
+      exit 1
+    fi
+    echo "  nodejs $(node -v) installe (manuel)"
+  else
+    echo "  Installation de Node.js 18 via NodeSource..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x 2>/dev/null | sudo -E bash - >/dev/null 2>&1
+    if sudo apt-get install -y nodejs >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+      echo "  nodejs $(node -v) installe"
+    else
+      # NodeSource a echoue (ex. arch non supportee) -> fallback manuel
+      echo "  NodeSource indisponible, fallback nodejs.org..."
+      if ! install_node_manual "$MACHINE"; then
+        echo "  ERREUR: Impossible d'installer Node.js."
+        exit 1
+      fi
+      echo "  nodejs $(node -v) installe (manuel)"
+    fi
   fi
-  echo "  nodejs $(node -v) installe"
 fi
 
 if ! command -v ffplay >/dev/null 2>&1; then
@@ -273,7 +337,16 @@ fi
 # Install
 echo ""
 echo "[4/4] Installation v${NEW_VER}..."
-if ! sudo dpkg -i "/tmp/$DEB_NAME"; then
+# Un .deb Architecture:arm64 (anciennes releases) sur un Pi armv7l : le contenu
+# est 100% JS donc compatible -> --force-architecture. Les nouvelles releases
+# sont en Architecture:all et n'ont pas besoin de force.
+DPKG_ARCH_FLAG=""
+DEB_ARCH=$(dpkg-deb -f "/tmp/$DEB_NAME" Architecture 2>/dev/null)
+if [ -n "$DEB_ARCH" ] && [ "$DEB_ARCH" != "all" ] && [ "$DEB_ARCH" != "$ARCH" ]; then
+  echo "  (.deb $DEB_ARCH sur systeme $ARCH -> installation forcee, contenu compatible)"
+  DPKG_ARCH_FLAG="--force-architecture"
+fi
+if ! sudo dpkg -i $DPKG_ARCH_FLAG "/tmp/$DEB_NAME"; then
   echo "  Resolution des dependances..."
   sudo apt-get install -f -y 2>&1 | tail -3
 fi
